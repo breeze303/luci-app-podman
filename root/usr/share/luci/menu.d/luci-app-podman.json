@@ -1,0 +1,78 @@
+{
+	"admin/services/podman": {
+		"title": "Podman",
+		"order": 60,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-podman" ],
+			"fs": {
+				"/usr/bin/podman": "executable"
+			}
+		}
+	},
+
+	"admin/services/podman/overview": {
+		"title": "Overview",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "podman/overview"
+		}
+	},
+
+	"admin/services/podman/pods": {
+		"title": "Pods",
+		"order": 2,
+		"action": {
+			"type": "view",
+			"path": "podman/pods"
+		}
+	},
+
+	"admin/services/podman/containers": {
+		"title": "Containers",
+		"order": 3,
+		"action": {
+			"type": "view",
+			"path": "podman/containers"
+		}
+	},
+
+	"admin/services/podman/images": {
+		"title": "Images",
+		"order": 4,
+		"action": {
+			"type": "view",
+			"path": "podman/images"
+		}
+	},
+
+	"admin/services/podman/networks": {
+		"title": "Networks",
+		"order": 5,
+		"action": {
+			"type": "view",
+			"path": "podman/networks"
+		}
+	},
+
+	"admin/services/podman/volumes": {
+		"title": "Volumes",
+		"order": 6,
+		"action": {
+			"type": "view",
+			"path": "podman/volumes"
+		}
+	},
+
+	"admin/services/podman/events": {
+		"title": "Events",
+		"order": 7,
+		"action": {
+			"type": "view",
+			"path": "podman/events"
+		}
+	}
+}

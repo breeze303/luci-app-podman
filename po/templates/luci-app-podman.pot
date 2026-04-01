@@ -1,0 +1,86 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Podman"
+msgstr ""
+
+msgid "Overview"
+msgstr ""
+
+msgid "Pods"
+msgstr ""
+
+msgid "Containers"
+msgstr ""
+
+msgid "Images"
+msgstr ""
+
+msgid "Networks"
+msgstr ""
+
+msgid "Volumes"
+msgstr ""
+
+msgid "Events"
+msgstr ""
+
+msgid "Podman - Overview"
+msgstr ""
+
+msgid "Podman - Pods"
+msgstr ""
+
+msgid "Podman - Containers"
+msgstr ""
+
+msgid "Podman - Images"
+msgstr ""
+
+msgid "Podman - Networks"
+msgstr ""
+
+msgid "Podman - Volumes"
+msgstr ""
+
+msgid "Podman - Events"
+msgstr ""
+
+msgid "Podman backend status, capability contract state, API details, and workload counts are shown below."
+msgstr ""
+
+msgid "Ensure luci-podman-service is running and /run/podman/podman.sock is available."
+msgstr ""
+
+msgid "Check Podman service/socket health, then retry."
+msgstr ""
+
+msgid "Podman API did not respond in time; check service load or restart luci-podman-service."
+msgstr ""
+
+msgid "Upgrade Podman/Libpod to %s or newer."
+msgstr ""
+
+msgid "Compatibility policy currently enforces read-only mode."
+msgstr ""
+
+msgid "This capability is unavailable on the current Podman API surface."
+msgstr ""
+
+msgid "Response exceeded safety limits; narrow request scope and retry."
+msgstr ""
+
+msgid "Request body exceeded safety limits; reduce payload size and retry."
+msgstr ""
+
+msgid "Podman capability is unavailable"
+msgstr ""
+
+msgid "%s Remediation: %s"
+msgstr ""
+
+msgid "[truncated: showing %s of %s characters]"
+msgstr ""
+
+msgid "Log preview truncated to %s of %s characters for low-memory safety."
+msgstr ""

@@ -1,0 +1,17 @@
+{
+	"luci-app-podman": {
+		"description": "Grant UBUS access for luci-app-podman",
+		"read": {
+			"ubus": {
+				"podman": [ "*" ],
+				"podman.*": [ "*" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"podman": [ "*" ],
+				"podman.*": [ "*" ]
+			}
+		}
+	}
+}

@@ -1,0 +1,248 @@
+#!/bin/sh
+
+PODMAN_BIN="/usr/bin/podman"
+PODMAN_URI="unix:///run/podman/podman.sock"
+PODMAN_SOCKET="/run/podman/podman.sock"
+RESOURCE_TIMEOUT=30
+SERVICE_WAIT_TIMEOUT=30
+
+WAIT_FOR_SERVICE=0
+SOURCE="manual"
+
+log_line() {
+	local level="$1"
+	shift
+	printf '%s level=%s component=luci-podman-reconcile source=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$level" "$SOURCE" "$*"
+}
+
+podman_call() {
+	"$PODMAN_BIN" --url "$PODMAN_URI" "$@"
+}
+
+run_with_timeout() {
+	if command -v timeout >/dev/null 2>&1; then
+		timeout "$RESOURCE_TIMEOUT" "$@"
+		return $?
+	fi
+
+	"$@"
+}
+
+is_eligible_policy() {
+	case "$1" in
+		always|unless-stopped|on-failure)
+			return 0
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+service_ready() {
+	[ -S "$PODMAN_SOCKET" ] || return 1
+	podman_call info >/dev/null 2>&1
+}
+
+wait_for_service_ready() {
+	local waited=0
+
+	while [ "$waited" -lt "$SERVICE_WAIT_TIMEOUT" ]; do
+		if service_ready; then
+			return 0
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+
+	return 1
+}
+
+container_policy() {
+	podman_call container inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$1" 2>/dev/null
+}
+
+container_running() {
+	local running
+	running="$(podman_call container inspect --format '{{.State.Running}}' "$1" 2>/dev/null)"
+	[ "$running" = "true" ]
+}
+
+container_stopped_by_user() {
+	local stopped
+	stopped="$(podman_call container inspect --format '{{.State.StoppedByUser}}' "$1" 2>/dev/null)"
+	[ "$stopped" = "true" ]
+}
+
+container_pod_id() {
+	podman_call container inspect --format '{{.Pod}}' "$1" 2>/dev/null
+}
+
+pod_policy() {
+	podman_call pod inspect --format '{{.RestartPolicy}}' "$1" 2>/dev/null
+}
+
+pod_running() {
+	local state
+	state="$(podman_call pod inspect --format '{{.State}}' "$1" 2>/dev/null)"
+	[ "$state" = "Running" ]
+}
+
+pod_infra_container_id() {
+	podman_call pod inspect --format '{{.InfraContainerID}}' "$1" 2>/dev/null
+}
+
+pod_stopped_by_user() {
+	local infra_id
+	infra_id="$(pod_infra_container_id "$1")"
+
+	[ -n "$infra_id" ] || return 1
+	container_stopped_by_user "$infra_id"
+}
+
+reconcile_pods() {
+	local pod_id policy rc started skipped failed
+	started=0
+	skipped=0
+	failed=0
+
+	for pod_id in $(podman_call pod ps -a --format '{{.Id}}' 2>/dev/null); do
+		policy="$(pod_policy "$pod_id")"
+		if ! is_eligible_policy "$policy"; then
+			skipped=$((skipped + 1))
+			log_line info "resource=pod id=$pod_id action=skip reason=restart_policy policy=${policy:-none}"
+			continue
+		fi
+
+		if pod_running "$pod_id"; then
+			skipped=$((skipped + 1))
+			log_line info "resource=pod id=$pod_id action=skip reason=already_running"
+			continue
+		fi
+
+		if pod_stopped_by_user "$pod_id"; then
+			skipped=$((skipped + 1))
+			log_line info "resource=pod id=$pod_id action=skip reason=intentional_stop"
+			continue
+		fi
+
+		run_with_timeout "$PODMAN_BIN" --url "$PODMAN_URI" pod start "$pod_id" >/dev/null 2>&1
+		rc=$?
+		if [ "$rc" -eq 0 ]; then
+			started=$((started + 1))
+			log_line info "resource=pod id=$pod_id action=start result=ok timeout=${RESOURCE_TIMEOUT}s"
+		else
+			failed=$((failed + 1))
+			log_line error "resource=pod id=$pod_id action=start result=error rc=$rc timeout=${RESOURCE_TIMEOUT}s"
+		fi
+	done
+
+	log_line info "stage=pods summary_started=$started summary_skipped=$skipped summary_failed=$failed"
+	[ "$failed" -eq 0 ]
+}
+
+reconcile_standalone_containers() {
+	local container_id pod_id policy rc started skipped failed
+	started=0
+	skipped=0
+	failed=0
+
+	for container_id in $(podman_call ps -a --format '{{.ID}}' 2>/dev/null); do
+		pod_id="$(container_pod_id "$container_id")"
+		if [ -n "$pod_id" ]; then
+			skipped=$((skipped + 1))
+			log_line info "resource=container id=$container_id action=skip reason=pod_member pod_id=$pod_id"
+			continue
+		fi
+
+		policy="$(container_policy "$container_id")"
+		if ! is_eligible_policy "$policy"; then
+			skipped=$((skipped + 1))
+			log_line info "resource=container id=$container_id action=skip reason=restart_policy policy=${policy:-none}"
+			continue
+		fi
+
+		if container_running "$container_id"; then
+			skipped=$((skipped + 1))
+			log_line info "resource=container id=$container_id action=skip reason=already_running"
+			continue
+		fi
+
+		if container_stopped_by_user "$container_id"; then
+			skipped=$((skipped + 1))
+			log_line info "resource=container id=$container_id action=skip reason=intentional_stop"
+			continue
+		fi
+
+		run_with_timeout "$PODMAN_BIN" --url "$PODMAN_URI" start "$container_id" >/dev/null 2>&1
+		rc=$?
+		if [ "$rc" -eq 0 ]; then
+			started=$((started + 1))
+			log_line info "resource=container id=$container_id action=start result=ok timeout=${RESOURCE_TIMEOUT}s"
+		else
+			failed=$((failed + 1))
+			log_line error "resource=container id=$container_id action=start result=error rc=$rc timeout=${RESOURCE_TIMEOUT}s"
+		fi
+	done
+
+	log_line info "stage=containers summary_started=$started summary_skipped=$skipped summary_failed=$failed"
+	[ "$failed" -eq 0 ]
+}
+
+parse_args() {
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+			--wait-service)
+				WAIT_FOR_SERVICE=1
+				;;
+			--source)
+				shift
+				[ "$#" -gt 0 ] || {
+					log_line error "reason=invalid_args detail=missing_source_value"
+					exit 2
+				}
+				SOURCE="$1"
+				;;
+			*)
+				log_line error "reason=invalid_args detail=unsupported_arg arg=$1"
+				exit 2
+				;;
+		esac
+		shift
+	done
+}
+
+main() {
+	local pods_ok containers_ok
+
+	parse_args "$@"
+
+	if [ "$WAIT_FOR_SERVICE" -eq 1 ]; then
+		if ! wait_for_service_ready; then
+			log_line error "stage=service_wait result=timeout wait_seconds=$SERVICE_WAIT_TIMEOUT"
+			exit 1
+		fi
+	fi
+
+	if ! service_ready; then
+		log_line error "stage=preflight result=service_unavailable socket=$PODMAN_SOCKET"
+		exit 1
+	fi
+
+	log_line info "stage=start detail=single_pass_order_pods_then_containers timeout_per_resource=${RESOURCE_TIMEOUT}s"
+
+	pods_ok=0
+	containers_ok=0
+	reconcile_pods && pods_ok=1
+	reconcile_standalone_containers && containers_ok=1
+
+	if [ "$pods_ok" -eq 1 ] && [ "$containers_ok" -eq 1 ]; then
+		log_line info "stage=done result=ok"
+		exit 0
+	fi
+
+	log_line error "stage=done result=partial_failure"
+	exit 1
+}
+
+main "$@"
